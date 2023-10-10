@@ -1,9 +1,9 @@
-mod process_block;
-mod emitter_block;
 mod system;
 
+use starknet::{ContractAddress};
+
 #[starknet::interface]
-trait IVoteContract<TContractState> {
+trait IExternalFunctions<TContractState> {
     fn registration_request(ref self: TContractState);
 }
 
@@ -11,10 +11,8 @@ trait IVoteContract<TContractState> {
 mod contract {
     use starknet::{ContractAddress};
     use option::OptionTrait;
-    use super::{IVoteContract};
+    use super::{IExternalFunctions};
     use super::{
-        emitter_block::{EmitTxImpl, EmitTx},
-        process_block::{EmitTxToProcessingTx, ProcessingTx},
         system::{InternalFunctions},
     };
 
@@ -24,26 +22,28 @@ mod contract {
     }
 
     #[external(v0)]
-    impl VoteContractImpl of IVoteContract<ContractState> {
+    impl ExternalFunctionsImpl of IExternalFunctions<ContractState> {
         fn registration_request(ref self: ContractState) {
             let caller = starknet::get_caller_address();
-            assert(!caller.is_zero(), 'INVALID_ADDRESS');
+            assert_address_is_not_zero(caller);
+            assert_address_is_not_register(@self, caller);
 
-            let send_emit_tx: EmitTx = EmitTxImpl::make_wrap(caller, 'REGISTRATION_REQUEST');
-            self.registration_request_syscall(send_emit_tx);
+            self._add_address_into_register_(caller);
         }
     }
 
+   
+
     impl InternalFunctionsImpl of InternalFunctions<ContractState> {
-        fn registration_request_syscall(ref self: ContractState, emit_tx: EmitTx) {
-            let processing_tx = EmitTxToProcessingTx::wrap_syscall(
-                input: emit_tx, descriptor: 'ADD_ADDRESS_IN_REGISTER'
-            );
-            let caller = processing_tx.contract_address;
-            match self.register.read(caller) {
-                Option::Some(_) => (), // module C
-                Option::None(_) => self.register.write(caller, Option::Some(true)),
-            }
+        fn _add_address_into_register_(ref self: ContractState, address: ContractAddress) {
+            self.register.write(address, Option::Some(true));
         }
+    }
+
+    fn assert_address_is_not_zero(address: ContractAddress) {
+        assert(!address.is_zero() ,'INVALID_ADDRESS');
+    }
+    fn assert_address_is_not_register(self: @ContractState, caller: ContractAddress) {
+        assert(self.register.read(caller) == Option::None, 'INVALID_CALL')
     }
 }
